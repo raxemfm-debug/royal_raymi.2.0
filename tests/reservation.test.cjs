@@ -1,0 +1,17 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+require('../js/reservation-core.js');
+global.window={};require('../js/products.js');
+const core=global.RR_RESERVATION,products=window.RR_PRODUCTS;
+const stores=[{id:'one',enabled:true,name:'Sucursal',address:'Dirección'},{id:'closed',enabled:false}];
+const values={name:'Ana María Pérez',phone:'987654321',storeId:'one',pickup:'2026-12-20T15:30'};
+const now=Date.parse('2026-12-19T12:00:00Z');
+test('Datos completos válidos y teléfono peruano normalizado',()=>{assert.deepEqual(core.validate(values,stores,now),{});assert.equal(core.phone(values.phone),'+51987654321');});
+test('Rechaza datos incompletos y sucursal deshabilitada',()=>{assert.equal(Object.keys(core.validate({name:'A',phone:'123',storeId:'closed',pickup:''},stores,now)).length,4);});
+test('Valida fecha real y hora de Perú',()=>{assert.ok(Number.isNaN(core.pickupTimestamp('2026-02-30T12:00')));assert.equal(core.pickupTimestamp(values.pickup),Date.parse('2026-12-20T20:30:00Z'));assert.ok(core.validate({...values,pickup:'2026-12-18T12:00'},stores,now).pickup);});
+test('Mensaje codificado mantiene datos y aviso de solicitud',()=>{const text=core.message(products[0],stores[0],values);const url=new URL(core.url('51900000000',text));assert.equal(url.searchParams.get('text'),text);assert.ok(text.includes(products[0].slug));assert.ok(text.includes('no una confirmación automática'));});
+test('No permite WhatsApp sin destinatario configurado',()=>{assert.throws(()=>core.url('','mensaje'));assert.throws(()=>core.url('+51 900000000','mensaje'));});
+test('Catálogo: 61 registros únicos, sin los ocho bombones',()=>{assert.equal(products.length,61);assert.equal(new Set(products.map(p=>p.id)).size,61);const removed=JSON.parse(fs.readFileSync(path.join(__dirname,'removed.json'),'utf8'));for(const slug of removed)assert.ok(!products.some(p=>p.slug===slug));});
+test('Datos públicos sin campos financieros y archivos de imágenes existentes',()=>{for(const p of products){assert.ok(!Object.keys(p).some(k=>/price|cost|currency|stock|rating/i.test(k)));for(const src of [p.image_url,...(p.gallery_urls||[])])assert.ok(fs.existsSync(path.join(__dirname,'..',src)),src);}});
